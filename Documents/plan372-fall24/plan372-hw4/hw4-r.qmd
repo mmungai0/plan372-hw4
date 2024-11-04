@@ -1,0 +1,28 @@
+---
+title: "plan372-hw4-r"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+##Clearing memory
+
+```{r}
+rm(list=ls())
+```
+
+#Installing tidycensus package
+```{r}
+install.packages('tidycensus')
+```
+
+#Adding necessary packages
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+```
+
