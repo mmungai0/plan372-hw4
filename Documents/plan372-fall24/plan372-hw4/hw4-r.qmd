@@ -25,4 +25,33 @@ library(tidyverse)
 library(tidycensus)
 library(sf)
 ```
+#Read in data
+```{r}
+airport = read_csv("airport_pairs.csv")
 
+```
+#Question 1 
+The first question the investors want to understand is how popular the existing routes from or to RDU are. 
+
+Create a table of the existing flights to or from RDU, and the number of passengers passenger traveling to each destination. 
+
+Make sure to include both flights departing RDU and those arriving RDU. There are a few records in the data for flights between RDU and places that do not have nonstop service from RDU (e.g. Fairbanks, Tucson). Filter your table to only include airport pairs with more 10,000 passengers.
+```{r}
+
+existing_flights = airport |>
+  filter(origin=="RDU" | dest=="RDU") |>
+  filter(passengers > 10000) |>
+  select('origin', 'dest', 'passengers')
+
+```
+Filtered the above data but question! There are a few records in the data for flights between RDU and places that do not have nonstop service from RDU (e.g. Fairbanks, Tucson).
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
