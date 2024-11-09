@@ -15,27 +15,33 @@ rm(list=ls())
 ```
 
 #Installing tidycensus package
+
 ```{r}
 install.packages('tidycensus')
+#note: i used ChatGPT to help me push the pre-question codes into github because i kept getting errors
 ```
 
 #Adding necessary packages
+
 ```{r}
 library(tidyverse)
 library(tidycensus)
 library(sf)
 ```
+
 #Read in data
+
 ```{r}
 airport = read_csv("airport_pairs.csv")
 
 ```
-#Question 1 
-The first question the investors want to understand is how popular the existing routes from or to RDU are. 
 
-Create a table of the existing flights to or from RDU, and the number of passengers passenger traveling to each destination. 
+#Question 1 The first question the investors want to understand is how popular the existing routes from or to RDU are.
+
+Create a table of the existing flights to or from RDU, and the number of passengers passenger traveling to each destination.
 
 Make sure to include both flights departing RDU and those arriving RDU. There are a few records in the data for flights between RDU and places that do not have nonstop service from RDU (e.g. Fairbanks, Tucson). Filter your table to only include airport pairs with more 10,000 passengers.
+
 ```{r}
 
 existing_flights = airport |>
@@ -44,14 +50,166 @@ existing_flights = airport |>
   select('origin', 'dest', 'passengers')
 
 ```
+
 Filtered the above data but question! There are a few records in the data for flights between RDU and places that do not have nonstop service from RDU (e.g. Fairbanks, Tucson).
 
-```{r}
+#Question 2
 
+Use tidycensus to retrieve Census data and match it to the airport pair data (the full dataset, not only flights to/from RDU). The geography you'll want to use with tidycensus is cbsa for core-based statistical area; this will match the origin_cbsa and dest_cbsa codes in the airport data. Core-based statistical area is Census jargon for a city and its suburbs. Retrieve at least the total population, but consider whether there are any other variables you want to include that may be predictive of air travel volumes.
+
+```{r}
+#grouping by origin cbsa before I join it with census data
+#let's see if it works and the scatter plots look diff
+airport_cbsa = airport |>
+  group_by(origin_cbsa, dest_cbsa) |>
+  summarize(passengers = sum(passengers),
+            distance = sum(distancemiles),
+            origin_cbsa_name = first(origin_cbsa_name),
+            dest_cbsa_name = first(dest_cbsa_name))|>
+  ungroup()
+```
+
+```{r}
+acs_vars = load_variables(2022, "acs5")
+unique(acs_vars$geography)
+```
+
+```{r}
+write_csv(acs_vars, "acsvars.csv")
+```
+
+Making two tables for cbsa data so I can add them easier during the join
+```{r}
+cbsa_origin = get_acs(
+  geography="cbsa",
+  variables = c(
+    "origin_total_population" = "B01003_001",
+    "og_income_under10K" = "B19001_002",
+    "og_income_under15K" = "B19001_003",
+    "og_income_under20K" = "B19001_004",
+    "og_income_under25K" = "B19001_005",
+    "og_income_under30K" = "B19001_006",
+    "og_income_under35K" = "B19001_007",
+    "og_income_under40K" = "B19001_008",
+    "og_income_under45K" = "B19001_009",
+    "og_income_under50K" = "B19001_010",
+    "og_income_under60K" = "B19001_011",
+    "og_income_under75K" = "B19001_012",
+    "og_income_under100K" = "B19001_013",
+    "og_income_under125K" = "B19001_014",
+    "og_income_under150K" = "B19001_015",
+    "og_income_under200K" = "B19001_016",
+    "og_income_over200K" = "B19001_017"
+    ),
+  year=2022,
+  survey="acs5",
+  output="wide"
+)
+
+cbsa_dest = get_acs(
+  geography="cbsa",
+  variables = c(
+    "dest_total_population" = "B01003_001",
+    "dest_income_under10K" = "B19001_002",
+    "dest_income_under15K" = "B19001_003",
+    "dest_income_under20K" = "B19001_004",
+    "dest_income_under25K" = "B19001_005",
+    "dest_income_under30K" = "B19001_006",
+    "dest_income_under35K" = "B19001_007",
+    "dest_income_under40K" = "B19001_008",
+    "dest_income_under45K" = "B19001_009",
+    "dest_income_under50K" = "B19001_010",
+    "dest_income_under60K" = "B19001_011",
+    "dest_income_under75K" = "B19001_012",
+    "dest_income_under100K" = "B19001_013",
+    "dest_income_under125K" = "B19001_014",
+    "dest_income_under150K" = "B19001_015",
+    "dest_income_under200K" = "B19001_016",
+    "dest_income_over200K" = "B19001_017"
+    #household inc
+    ),
+  year=2022,
+  survey="acs5",
+  output="wide"
+)
+
+#Grouping by cbsa, not airport, to make it easier for later parts of the question
+
+#renaming GEOID to origin cbsa and dest_cbsa and making them characters, respectively, to make it easier to join later
+cbsa_origin = cbsa_origin |>
+  mutate(origin_cbsa = GEOID)
+cbsa_dest = cbsa_dest |>
+  mutate(dest_cbsa = GEOID)
+
+```
+
+Join the CBSA population data to the airport data. You will need to join it twice, so that you have total population for the origin CBSA and the destination CBSA. You may want to create copies of the Census data with the variables renamed before joining, so that you know which columns are for the origin vs. destination airport. For instance, you might create one table with the population column called "origin_pop" and then join based on the origin CBSA, and another with the column called "destination_pop", and then join based on the destination CBSA. If you get errors about types not matching, look at how we solved this in the R GIS exercise.
+
+```{r}
+airport_origin = airport_cbsa |>
+  mutate(origin_cbsa = as.character(origin_cbsa)) |>
+  left_join(cbsa_origin, by="origin_cbsa") |>
+  mutate(underpov_pct = (og_income_under10KE + og_income_under15KE + og_income_under20KE + og_income_under25KE + og_income_under30KE)/origin_total_populationE * 100,
+         underdoublepov_pct = (og_income_under35KE + og_income_under40KE + og_income_under45KE + og_income_under50KE + og_income_under60KE)/origin_total_populationE * 100,
+         abovedoublepov_pct = (og_income_under75KE + og_income_under100KE + og_income_under125KE + og_income_under150KE + og_income_under200KE + og_income_over200KE)/origin_total_populationE * 100)
+
+airport_combined = airport_origin |>
+  mutate(dest_cbsa = as.character(dest_cbsa)) |>
+  left_join(cbsa_dest, by="dest_cbsa") |>
+  mutate(underpov_pct_2 = (dest_income_under10KE + dest_income_under15KE + dest_income_under20KE + dest_income_under25KE + dest_income_under30KE)/dest_total_populationE * 100,
+         underdoublepov_pct_2 = (dest_income_under35KE + dest_income_under40KE + dest_income_under45KE + dest_income_under50KE + dest_income_under60KE)/dest_total_populationE * 100,
+         abovedoublepov_pct_2 = (dest_income_under75KE + dest_income_under100KE + dest_income_under125KE + dest_income_under150KE + dest_income_under200KE + dest_income_over200KE)/dest_total_populationE * 100)
+```
+
+Some areas are served by multiple airports (for instance, Chicago is served by both O’Hare and Midway International Airports). The data show airport-to-airport volumes. Use group_by and summarize to create a new dataset that shows total CBSA to CBSA volumes (instead of passangers being split between like 6 diff airports, sum them to get totals from one cbsa to another).A few airports are not in a metropolitan area. You can remove them from this analysis (remove NAs).
+
+
+mutate(MISSING = is.na(cbsa_to_cbsa$origin_pop) |
+is.na(cbsa_to_cbsa$dest_pop)) |>
+subset(cbsa_to_cbsa, subset = !MISSING)
+                 
+
+Generate scatterplots between origin population and total passengers, destination population and total passengers, and flight distance and total passengers. Include the scatterplots in your report, and describe what trend they show (if any).
+```{r}
+#Need to group by OG ID and then add population so it's based on specific 
+ggplot(airport_combined, aes(x=origin_total_populationE, y=passengers)) + geom_point()
+```
+
+```{r}
+ggplot(airport_combined, aes(x=dest_total_populationE, y=passengers)) + geom_point()
+```
+
+```{r}
+airport_combined |>
+  ggplot(aes(x=distance, y=passengers)) + geom_point()
+```
+
+Extra credit: include a pair of scatterplots for another variable other than population, at the origin and destination
+```{r}
+#Percentage of people in original destination under the poverty line
+ggplot(airport_combined, aes(x=underpov_pct, y=passengers)) + geom_point()
+#Percentage of people in destination destination under the poverty line
+ggplot(airport_combined, aes(x=underpov_pct_2, y=passengers)) + geom_point()
+#Percentage of people in original destination between the poverty line and double the poverty line
+ggplot(airport_combined, aes(x=underdoublepov_pct, y=passengers)) + geom_point()
+#Percentage of people in original destination between the poverty line and double the poverty line
+ggplot(airport_combined, aes(x=underdoublepov_pct_2, y=passengers)) + geom_point()
+
+```
+
+
+```{r}
 
 ```
 
 ```{r}
 
+```
+
+```{r}
+
+```
+
+```{r}
 
 ```
