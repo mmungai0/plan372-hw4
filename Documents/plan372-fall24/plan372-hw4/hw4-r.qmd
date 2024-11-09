@@ -197,9 +197,15 @@ ggplot(airport_combined, aes(x=underdoublepov_pct_2, y=passengers)) + geom_point
 
 ```
 
+#Question 3
+Run a regression of total CBSA-to-CBSA passenger volumes on origin CBSA population, destination CBSA population, distance between cities, and any other Census variables you wish to include. 
 
+Use all the data, not just data for flights coming to/going from RDU. 
+
++ 1 extra credit point for including and interpreting variables other than population]
 ```{r}
-
+airport_regression = lm(passengers ~ origin_total_populationE + dest_total_populationE + distance + underpov_pct + underdoublepov_pct + abovedoublepov_pct + underpov_pct_2 + underdoublepov_pct_2 + abovedoublepov_pct_2, data=airport_combined)
+summary(airport_regression)
 ```
 
 ```{r}
