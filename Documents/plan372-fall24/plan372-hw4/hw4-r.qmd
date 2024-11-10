@@ -207,12 +207,55 @@ Use all the data, not just data for flights coming to/going from RDU.
 airport_regression = lm(passengers ~ origin_total_populationE + dest_total_populationE + distance + underpov_pct + underdoublepov_pct + abovedoublepov_pct + underpov_pct_2 + underdoublepov_pct_2 + abovedoublepov_pct_2, data=airport_combined)
 summary(airport_regression)
 ```
+#Question 4
+Use your model to predict passenger demand on these routes. Be sure to predict demand in both directions, i.e. RDU to the destination, and the destination to RDU. Since your model is based on origin and destination metropolitan area Census data, you’ll have to find that data for these cities, and create a new table to predict from (it should already be in your dataset, since airlines already fly to all of these cities, just not from RDU).
 
+RDU to Portland, OR (PDX) - 2,363 mi
 ```{r}
+#First I went and search for the cbsa IDs of the relevant places 
+#Portland: 38900
+#El Paso: 21340
+#Tallahassee: 45220
+#Sacramento: 40900
+#RDU: 39580 
 
+#Then I made a table summarizing the key info from all the places 
+passenger = airport |>
+  filter(dest_cbsa==38900|dest_cbsa==21340|
+           dest_cbsa==45220|dest_cbsa==40900) |>
+  mutate(dest_cbsa = as.character(dest_cbsa)) |>
+  left_join(cbsa_dest, by="dest_cbsa") |>
+  mutate(
+    dest_underpov_pct = (dest_income_under10KE +
+                           dest_income_under15KE +
+                           dest_income_under20KE +
+                           dest_income_under25KE
+                         +dest_income_under30KE)
+    /dest_total_populationE * 100) |>
+  group_by(dest_cbsa)|>
+  summarize(
+    dest_pop = mean(dest_total_populationE),
+    dest_underpov_pct = mean(dest_underpov_pct)
+  ) |>
+  mutate(RDU_origin = c("39580", "39580", "39580",
+                          "39580"),
+         RDU_pop = c(1420825, 1420825, 1420825, 1420825),
+         RDU_underpov_pct=c(5.233157, 5.233157, 5.233157,
+                            5.233157),
+         distance=c(1606, 2363, 2345, 496),
+         pred_passenger_RDU2dest = RDU_pop*1.912e-02 + dest_pop*1.899e-02 +distance*2.351e+01 + RDU_underpov_pct*-8.139e+03 + dest_underpov_pct*-8.271e+03 + 6.863e+04,
+         pred_passenger_dest2RDU = dest_pop*1.912e-02 + RDU_pop*1.899e-02 +distance*2.351e+01 + dest_underpov_pct*-8.139e+03 + RDU_underpov_pct*-8.271e+03 + 6.863e+04)
+         
 ```
 
+RDU_origin = c("39580", "39580", "39580",
+                          "39580"),
+         RDU_pop = c(1420825, 1420825, 1420825
+                       ,1420825)
+RDU to El Paso, TX (ELP) - 1,606 mi
 ```{r}
+#Next do the same for El Paso
+#Using original destinations because they'll be the same regatd
 
 ```
 
