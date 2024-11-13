@@ -164,36 +164,47 @@ airport_combined = airport_origin |>
 Some areas are served by multiple airports (for instance, Chicago is served by both O’Hare and Midway International Airports). The data show airport-to-airport volumes. Use group_by and summarize to create a new dataset that shows total CBSA to CBSA volumes (instead of passangers being split between like 6 diff airports, sum them to get totals from one cbsa to another).A few airports are not in a metropolitan area. You can remove them from this analysis (remove NAs).
 
 
-mutate(MISSING = is.na(cbsa_to_cbsa$origin_pop) |
-is.na(cbsa_to_cbsa$dest_pop)) |>
-subset(cbsa_to_cbsa, subset = !MISSING)
+```{r}
+airport_complete = airport_combined|>
+  mutate(MISSING = is.na(GEOID.x) |
+           is.na(GEOID.y)) |>
+  subset(subset = !MISSING)
+#There are some NAs somehow in original population, destination population, and destination cbsa 
+```
                  
 
 Generate scatterplots between origin population and total passengers, destination population and total passengers, and flight distance and total passengers. Include the scatterplots in your report, and describe what trend they show (if any).
 ```{r}
 #Need to group by OG ID and then add population so it's based on specific 
-ggplot(airport_combined, aes(x=origin_total_populationE, y=passengers)) + geom_point()
+ggplot(airport_complete, aes(x=origin_total_populationE, y=passengers)) + geom_point() + labs(
+  title = "Effect of Origin Population on Flight Volume") + xlab("Population of origin")
 ```
 
 ```{r}
-ggplot(airport_combined, aes(x=dest_total_populationE, y=passengers)) + geom_point()
+ggplot(airport_complete, aes(x=dest_total_populationE, y=passengers)) + geom_point() + labs(
+  title = "Effect of Destination Population on\nFlight Volume") + xlab("Destination Population")
 ```
 
 ```{r}
 airport_combined |>
-  ggplot(aes(x=distance, y=passengers)) + geom_point()
+  ggplot(aes(x=distance, y=passengers)) + geom_point()  + labs(
+  title = "Effect of Distance between\nOrigin and Destination Population on Flight Volume") 
 ```
 
 Extra credit: include a pair of scatterplots for another variable other than population, at the origin and destination
 ```{r}
 #Percentage of people in original destination under the poverty line
-ggplot(airport_combined, aes(x=underpov_pct, y=passengers)) + geom_point()
+ggplot(airport_combined, aes(x=underpov_pct, y=passengers)) + geom_point() + labs(
+  title = "Effect of Origin Population Income on\nFlight Volume") + xlab("percent of origin population\nunder the federal poverty line")
 #Percentage of people in destination destination under the poverty line
-ggplot(airport_combined, aes(x=underpov_pct_2, y=passengers)) + geom_point()
+ggplot(airport_combined, aes(x=underpov_pct_2, y=passengers)) + geom_point()+ labs(
+  title = "Effect of Destination Population Income on\nFlight Volume") + xlab("percent of destination population\nunder the federal poverty line")
 #Percentage of people in original destination between the poverty line and double the poverty line
-ggplot(airport_combined, aes(x=underdoublepov_pct, y=passengers)) + geom_point()
+ggplot(airport_combined, aes(x=underdoublepov_pct, y=passengers)) + geom_point() + labs(
+  title = "Effect of Origin Population Income on\nFlight Volume") + xlab("percent of origin population between 100-200% of the federal poverty line")
 #Percentage of people in original destination between the poverty line and double the poverty line
-ggplot(airport_combined, aes(x=underdoublepov_pct_2, y=passengers)) + geom_point()
+ggplot(airport_combined, aes(x=underdoublepov_pct_2, y=passengers)) + geom_point() + labs(
+  title = "Effect of Destination Population Income on\nFlight Volume") + xlab("percent of origin population between 100-200% of the federal poverty line")
 
 ```
 
@@ -204,13 +215,12 @@ Use all the data, not just data for flights coming to/going from RDU.
 
 + 1 extra credit point for including and interpreting variables other than population]
 ```{r}
-airport_regression = lm(passengers ~ origin_total_populationE + dest_total_populationE + distance + underpov_pct + underdoublepov_pct + abovedoublepov_pct + underpov_pct_2 + underdoublepov_pct_2 + abovedoublepov_pct_2, data=airport_combined)
+airport_regression = lm(passengers ~ origin_total_populationE + dest_total_populationE + distance + underpov_pct + underdoublepov_pct + abovedoublepov_pct + underpov_pct_2 + underdoublepov_pct_2 + abovedoublepov_pct_2, data=airport_complete)
 summary(airport_regression)
 ```
 #Question 4
 Use your model to predict passenger demand on these routes. Be sure to predict demand in both directions, i.e. RDU to the destination, and the destination to RDU. Since your model is based on origin and destination metropolitan area Census data, you’ll have to find that data for these cities, and create a new table to predict from (it should already be in your dataset, since airlines already fly to all of these cities, just not from RDU).
 
-RDU to Portland, OR (PDX) - 2,363 mi
 ```{r}
 #First I went and search for the cbsa IDs of the relevant places 
 #Portland: 38900
@@ -220,7 +230,7 @@ RDU to Portland, OR (PDX) - 2,363 mi
 #RDU: 39580 
 
 #Then I made a table summarizing the key info from all the places 
-passenger = airport |>
+passenger1 = airport |>
   filter(dest_cbsa==38900|dest_cbsa==21340|
            dest_cbsa==45220|dest_cbsa==40900) |>
   mutate(dest_cbsa = as.character(dest_cbsa)) |>
@@ -248,17 +258,4 @@ passenger = airport |>
          
 ```
 
-RDU_origin = c("39580", "39580", "39580",
-                          "39580"),
-         RDU_pop = c(1420825, 1420825, 1420825
-                       ,1420825)
-RDU to El Paso, TX (ELP) - 1,606 mi
-```{r}
-#Next do the same for El Paso
-#Using original destinations because they'll be the same regatd
 
-```
-
-```{r}
-
-```
