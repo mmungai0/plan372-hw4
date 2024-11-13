@@ -170,9 +170,9 @@ Some areas are served by multiple airports (for instance, Chicago is served by b
 
 ```{r}
 airport_complete = airport_combined|>
-  mutate(MISSING = is.na(GEOID.x) |
+  mutate(MISSING = is.na(GEOID.x) | 
            is.na(GEOID.y)) |>
-  subset(subset = !MISSING) #removing airports not in a metropolitan area
+  subset(subset = !MISSING) #removing airports not in a metropolitan area because they don't have a GEOID corresponding to a CBSA
                             #subset is from a function I used in a previous class, refreshed via certain websites 
 #There are some NAs somehow in original population, destination population, and destination cbsa 
 ```
