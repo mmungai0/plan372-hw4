@@ -1,0 +1,399 @@
+---
+title: "final-project-practice"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+Clearing environment
+
+```{r}
+rm(list=ls())
+```
+
+Adding libraries
+
+```{r}
+library(tidyverse)
+library(tidycensus)
+library(igraph)
+library(sf)
+```
+
+Already did API key
+
+Looking at decennial census variables
+
+```{r}
+variables = load_variables(2020, "dhc") #SO SO SOOO HELPFUL
+#getting variables of sex, race, and owner type (renter v owner)
+#compare renter v owner population as that's often an indicator of socioeconomic status
+```
+
+Put your variable name in front of the census one genius.
+
+Consult the literature and find vulnerable populations to investigate
+
+```{r}
+census = get_decennial(
+  geography = "tract",
+  state = "37",
+  county = c("129", "133", "141"), #129 is New Hanover, 133 is Onslow and 141 is Pender
+  variables = c(
+    "totalPopulation" = "P1_001N",
+    #Race
+    "totalRacePopulation" = "P3_001N",
+    "whiteAlone" = "P3_002N",
+    "blackAlone" = "P3_003N",
+    "nativeamerican/alaskanativeAlone" = "P3_004N",
+    "asianAlone" = "P3_005N",
+    "nativehawaiian/pacificislanderAlone" = "P3_006N",
+    "otherAlone" = "P3_007N",
+    "twoplusAlone" = "P3_008N",
+    "totalHispanicLatPopulation" = "P4_001N",
+    #Ethnicity
+    "notHispanicLatino" = "P4_002N",
+    "HispanicLatino" = "P4_003N",
+    #Tenure (owned vs rental homes)*
+    "totalTenure" = "H4_001N",
+    "ownedMortgageOrLoan" = "H4_002N",
+    "ownedFreeAndClear" = "H4_003N",
+    "rented" = "H4_004N",
+    #Vacancy Status (Future Ownership)
+    "totalVacancy" = "H5_001N",
+    "forRent" = "H5_002N",
+    "rentedUnoccupied" = "H5_003N",
+    "forSale" = "H5_004N",
+    "soldUnoccupied" = "H5_005N",
+    "seasonalRecreational" = "H5_006N",
+    "migrantHousing" = "H5_007N",
+    "otherVacancy" = "H5_008N",
+    #HouseholdType
+    "totalHouseholdsRespondingElderly" = "P19_001N",
+    "totalHouseholdsWith65+" = "P19_002N", 
+    "onePersonElderlyHouseholds" = "P19_003N", #2 person households exist with 2 elderly people but living alone while elderly = more risky
+    "femalePopulation" = "P12_026N", #from selected age categories
+    "malePopulation" = "P12_002N"), #ibid
+  year = 2020,
+  sumfile = "dhc",
+  output="wide"
+)
+```
+
+*I might need to use string splitting to separate NAME into NAME, County and State* If I need more information I can go back to H4A-V and see tenure by race
+
+#1. Descriptive Statistics I want to understand the general demographic makeup of these counties so I can compare them to the demographic makeup of the SFHAs
+
+First I'm going to automatically removing tracts with a total population \<30 Reasoning: minimum value for most statistical tests that rely on Normal distribution
+
+```{r}
+census = census |>
+  filter(totalPopulation > 29) 
+```
+
+Then I'm going to find the mean, median and maximum of vulnerable group proportions for each county
+
+Proportion Calculations (within each tract) - Race proportions, specifically, white, black, asian, indigenousAmerican/Alaskan/PacificIslander, other hispanic/latino and two+ - rented/tenure and mortgageORloan/tenure -\> tenure pie chart - occupancy proportions: rented+rentNotOccupied/total vacancy, same with sold+soldNotOccupied, seasonal recreation (omitting migrant since highest value is 5 and other because I'm not interested in that) - elderly homes/all homes reporting on elderly prescence & single person elderly homes/all homes reporting on an elderly prescence
+
+```{r}
+descriptive_stats = census |>
+  mutate(indigenousAmerican_PI = `nativeamerican/alaskanativeAlone` + `nativehawaiian/pacificislanderAlone`,
+         prop_white = whiteAlone/totalRacePopulation, #totalRacePop
+         prop_black = blackAlone/totalRacePopulation,
+         prop_asian = asianAlone/totalRacePopulation,
+         prop_indigenousAPI = indigenousAmerican_PI/totalRacePopulation,
+         prop_other = otherAlone/totalRacePopulation,
+         prop_multi = twoplusAlone/totalRacePopulation,
+         prop_hispanicLatino = HispanicLatino/totalHispanicLatPopulation,
+         prop_renter = rented/totalTenure,
+         prop_ownMortgageLoan = ownedMortgageOrLoan/totalTenure,
+         prop_own = ownedFreeAndClear/totalTenure,
+         prop_vacant_rentals = (forRent + rentedUnoccupied)/totalVacancy,
+         prop_vacant_purchases = (forSale + soldUnoccupied)/totalVacancy, 
+         prop_vacant_vacation = seasonalRecreational/totalVacancy,
+         prop_elderly = `totalHouseholdsWith65+`/totalHouseholdsRespondingElderly,
+         prop_elderlyAlone = onePersonElderlyHouseholds/totalHouseholdsRespondingElderly)
+```
+
+Separating NAME into County and State
+
+```{r}
+unique(descriptive_stats$NAME) #no NA values 
+str_match(descriptive_stats$NAME, "; ([:alpha:]+[:space:]?[:alpha:]+? County);")
+descriptive_stats[,"County"] = str_match(descriptive_stats$NAME, "; ([:alpha:]+[:space:]?[:alpha:]+? County);")[,2]
+```
+
+Saving descriptive_stats as a csv I can join to my census tract data in QGIS
+
+```{r}
+write_csv(descriptive_stats, "descriptive_stats.csv") #https://stackoverflow.com/questions/62006325/export-r-data-to-csv to help me remember the syntax
+```
+
+Finding the median and maximum of vulnerable group proportions for each county
+
+```{r}
+general_vulnerability = descriptive_stats |>
+  group_by(County) |>
+  summarize(median_propBlack = median(prop_black),
+            median_propAsian = median(prop_asian),
+            median_propIndigenousAPI = median(prop_indigenousAPI),
+            median_other = median(prop_other),
+            median_multi = median(prop_multi),
+            median_hispLat = median(prop_hispanicLatino),
+            median_renter = median(prop_renter),
+            median_elderly = median(prop_elderly),
+            median_elderyAlone = median(prop_elderlyAlone),
+            max_propBlack = max(prop_black),
+            max_propAsian = max(prop_asian),
+            max_propIndigenousAPI = max(prop_indigenousAPI),
+            max_other = max(prop_other),
+            max_multi = max(prop_multi),
+            max_hispLat = max(prop_hispanicLatino),
+            max_renter = max(prop_renter),
+            max_elderly = max(prop_elderly),
+            max_elderlyAlone = max(prop_elderlyAlone))
+general_vulnerability
+```
+
+Median is very far from the maximum in many cases, implying that the data is often skewed right --> this implies that populations are not evenly spread out among the counties
+
+In my report I'll map the top 3 largest maximum proportions of minority races/ethnicities (which happen to be Black, Asian, Hispanic), as well as single person elderly homes, elderly homes and renter homes
+
+#2. Demographics of SFHAs
+I have found the parcels that intersect with a SFHA, then what census tracts contain them. Intersect not only refers to parcels completely within a SFHA, but parcels that share a boundary with a SFHA. Given the evidence that SFHAs are an increasingly conservative measurement of flood risk, I think intersection is a acceptable metric of measuring flood zoning.
+
+Reddit gave me the idea to use spatial joining to match the parcels to their census tracts. https://www.reddit.com/r/gis/comments/14w27sj/how_can_i_match_a_list_of_parcel_ids_to_census/ 
+
+Reading in csvs of the data I modified in QGIS.
+
+Parcel Data (comparing the updated versions to this just to make ure it's reasonable later on)
+
+newHanover_parcels = read_csv("parcels_new_hanover.csv")
+onslow_parcels = read_csv("parcels_onslow.csv")
+pender_parcels = read_csv("parcels_pender.csv")
+#read_csv takes all characters as strings whereas read.csv takes them as factors; however, read.csv is easier for R to read in the csv files
+#learned this from https://uomresearchit.github.io/r-tidyverse-intro/03-loading-data-into-R/#:~:text=read_csv()%20will%20always%20read,option%20stringsAsFactors%20%3D%20FALSE%20to%20read.
+
+```{r}
+newHanoverParcels = read_csv("NH_parcels_with_census_values.csv")
+onslowParcels = read_csv("O_parcels_with_census_values.csv")
+penderParcels = read_csv("P_parcels_with_census_values.csv")
+#read_csv takes all characters as strings whereas read.csv takes them as factors; however, read.csv is easier for R to read in the csv files
+#learned this from https://uomresearchit.github.io/r-tidyverse-intro/03-loading-data-into-R/#:~:text=read_csv()%20will%20always%20read,option%20stringsAsFactors%20%3D%20FALSE%20to%20read.
+```
+I didn't lose or add any variables adding the Census classifications, thankfully
+- New Hanover still has 101,757 parcels recorded,
+- Onslow still has 93,353 parcels recorded,
+- Pender still has 53,880 parcels recorded,
+
+Merging those into one data frame
+```{r}
+#This can be done using rbind() (I want multiple rows under the same columns), but I have to make sure the columns are the same
+#They're not because of RESID in the onslow parcels, can change that for New Hanover and Pender
+newHanoverParcels = newHanoverParcels|>
+  mutate(RESID = case_match(PARUSEDESC,
+                            c("Residential", "Apartment", "Residential Single Wide", 
+                              "Residential Double Wide") ~ 1,
+                            .default = 0))
+penderParcels = penderParcels |>
+  mutate(RESID = case_match(PARUSEDESC,
+                            "Residential" ~ 1,
+                            .default = 0))
+#I could use case when but I don't want to match each individual parcel use to a number when case match seems to do that easily
+#Case match code example from Stack Overflow: https://stackoverflow.com/questions/38649533/case-when-in-mutate-pipe 
+parcels = rbind(newHanoverParcels, onslowParcels, penderParcels)
+```
+
+To join with Census tract data (step that will happen later down) GEOID needs to be a character
+```{r}
+parcels = parcels |>
+  mutate(GEOID = as.character(GEOID))
+
+```
+Checking to see if the SFHA parcels are all residential or if I somehow messed that up
+```{r}
+table(parcels$In_SFHA, parcels$RESID)
+#Calculating a frequency table: https://www.statology.org/table-function-in-r/ 
+#What happened to the original plot of the movie --> only 38,506 parcels are residential and in a SFHA
+#Perhaps the filter doesn't actually isolate the variables
+```
+Repeat for Census Tract data 
+```{r}
+updated_census = read_csv("updated_census_tract .csv")
+updated_census = updated_census |>
+  filter(COUNTYFP == "129" | COUNTYFP == "133" | COUNTYFP == "141") |>
+  filter(descriptive_stats_totalPopulation > 29) #now observations match the OG census dataset
+```
+
+Counting parcels in each tract
+```{r}
+parcels |>
+  group_by(CNTYNAME, NAMELSAD) |>
+  summarize(parcel_count = n()) 
+
+#this returns the frequency of the features matching the unique categories above (Rdocumentation.org: https://www.rdocumentation.org/packages/dplyr/versions/1.0.10/topics/count)
+
+#How many parcels aren't in a census tract (NAMELSAD = NULL) and how is that even possible?
+parcels |>
+  group_by(CNTYNAME, NAMELSAD) |>
+  filter(is.na(NAMELSAD)) |>
+  summarize(parcel_count = n()) 
+#526
+```
+
+#3. Flood Vulnerability Check
+What percentage of parcels in SFHA zones are residential per county?
+```{r}
+parcels |>
+  filter(RESID == 1) |>
+  group_by(CNTYNAME, NAMELSAD) |>
+  summarize(pct_SFHA_parcels = mean(In_SFHA)) |>
+  ungroup() |>
+  arrange(desc(pct_SFHA_parcels)) #descending: https://dplyr.tidyverse.org/reference/desc.html
+#Double pct of Pender residential parcels in SFHA compared to Onslow and to a lesser extent New Hanover
+#pct is out of the total residential parcels 
+#Some of the highest percentages of parcels in a SFHA don't have an associated Census Tract
+```
+
+Graph comparing pct_vulnerabilities in each census tract to pct_parcels in SFHA
+```{r}
+#Joining census descriptive data to parcel data
+census_plus_parcels = descriptive_stats |>
+  left_join(parcels, by="GEOID") 
+
+census_plus_parcels|>
+  filter(RESID == 1) |>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_black = mean(prop_black))|>
+  ggplot(aes(x=pct_black, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() 
+```
+
+Comparing the rest of the vulnerability groups to pct parcels in residential areas
+```{r} 
+#Hispanic/Latino
+census_plus_parcels|>
+  filter(RESID == 1) |>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_hispLat = mean(prop_hispanicLatino))|>
+  ggplot(aes(x=pct_hispLat, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() 
+
+```
+
+```{r}
+#Asian
+census_plus_parcels|>
+  filter(RESID == 1)|>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_asian = mean(prop_asian))|>
+  ggplot(aes(x=pct_asian, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() 
+
+```
+
+```{r}
+#Renter
+census_plus_parcels|>
+  filter(RESID == 1) |>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_renter = mean(prop_renter))|>
+  ggplot(aes(x=pct_renter, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() 
+```
+
+```{r}
+#Elderly
+census_plus_parcels|>
+  filter(RESID == 1)|>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_elderly = mean(prop_elderly))|>
+  ggplot(aes(x=pct_elderly, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() + labs(title = "Census Tract Proportions of Households with at Least One\nElderly Resident to Residential Parcels in an SFHA") +xlab("proportion of households with an elderly resident") + ylab("proportion of residential parcels in an SFHA")
+```
+
+```{r}
+#Elderly alone?
+census_plus_parcels|>
+  filter(RESID == 1)|>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_elderlyAlone = mean(prop_elderlyAlone))|>
+  ggplot(aes(x=pct_elderlyAlone, y=pct_sfhaZone, color=CNTYNAME)) + geom_point() 
+```
+
+#4. Correlation Matrix for the variables
+```{r}
+correlation_tbl = census_plus_parcels|>
+  filter(RESID==1)|>
+  group_by(CNTYNAME, NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_black = mean(prop_black),
+            pct_asian = mean(prop_asian),
+            pct_hispLat = mean(prop_hispanicLatino),
+            pct_renter = mean(prop_renter),
+            pct_elderly = mean(prop_elderly),
+            pct_elderlyAlone = mean(prop_elderlyAlone))
+cor(correlation_tbl[, c("pct_black", "pct_asian", "pct_hispLat", "pct_renter", "pct_elderly", "pct_elderlyAlone", "pct_sfhaZone")]) 
+#cor() code: https://www.geeksforgeeks.org/how-to-calculate-correlation-between-multiple-variables-in-r/
+#The only positive correlation follows the graph, between elderly percentage in residential parcels and percentage sfha zones in Census tract
+```
+
+```{r}
+cor.test(correlation_tbl$pct_sfhaZone, correlation_tbl$pct_elderly, method = "pearson")
+#Wide between 0.33 and 0.62 but p-value is 0.0000001
+```
+Does this correlation vary within counties?
+
+New Hanover --> correlation drops to somewhat (0.34)
+```{r}
+correlation_tbl_NH = census_plus_parcels|>
+  filter(RESID==1 & CNTYNAME == "New Hanover")|>
+  group_by(NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_black = mean(prop_black),
+            pct_asian = mean(prop_asian),
+            pct_hispLat = mean(prop_hispanicLatino),
+            pct_renter = mean(prop_renter),
+            pct_elderly = mean(prop_elderly),
+            pct_elderlyAlone = mean(prop_elderlyAlone)) |>
+  ungroup()
+cor(correlation_tbl_NH[, c("pct_black", "pct_asian", "pct_hispLat", "pct_renter", "pct_elderly", "pct_elderlyAlone", "pct_sfhaZone")]) 
+```
+
+Onslow --> correlation drops to somewhat (0.34)
+```{r}
+correlation_tbl_O = census_plus_parcels|>
+  filter(RESID==1 & CNTYNAME == "Onslow")|>
+  group_by(NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_black = mean(prop_black),
+            pct_asian = mean(prop_asian),
+            pct_hispLat = mean(prop_hispanicLatino),
+            pct_renter = mean(prop_renter),
+            pct_elderly = mean(prop_elderly),
+            pct_elderlyAlone = mean(prop_elderlyAlone)) |>
+  ungroup()
+cor(correlation_tbl_O[, c("pct_black", "pct_asian", "pct_hispLat", "pct_renter", "pct_elderly", "pct_elderlyAlone", "pct_sfhaZone")]) 
+```
+
+Pender --> correlation drops to somewhat (0.34)
+```{r}
+correlation_tbl_P = census_plus_parcels|>
+  filter(RESID==1 & CNTYNAME == "Pender")|>
+  group_by(NAMELSAD)|>
+  summarise(pct_sfhaZone = mean(In_SFHA),
+            pct_black = mean(prop_black),
+            pct_asian = mean(prop_asian),
+            pct_hispLat = mean(prop_hispanicLatino),
+            pct_renter = mean(prop_renter),
+            pct_elderly = mean(prop_elderly),
+            pct_elderlyAlone = mean(prop_elderlyAlone)) |>
+  ungroup()
+cor(correlation_tbl_P[, c("pct_black", "pct_asian", "pct_hispLat", "pct_renter", "pct_elderly", "pct_elderlyAlone", "pct_sfhaZone")]) 
+```
